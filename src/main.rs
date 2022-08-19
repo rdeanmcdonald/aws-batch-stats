@@ -1,9 +1,30 @@
 use chrono::serde::{ts_seconds, ts_seconds_option};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use clap::Parser;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::io;
 use std::process::Command;
 use std::str;
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Outputs cold_start time to the first column
+    #[clap(short, long, value_parser)]
+    cold: bool,
+
+    /// Outputs run_time time to the next column
+    #[clap(short, long, value_parser)]
+    run: bool,
+
+    /// Outputs total_time time to the final column
+    #[clap(short, long, value_parser)]
+    total: bool,
+
+    /// Outputs | cold run total | times
+    #[clap(short, long, value_parser)]
+    all: bool,
+}
 
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +57,8 @@ where
 }
 
 fn main() {
+    let args = Args::parse();
+
     let aws_res = Command::new("aws")
         .arg("batch")
         .arg("list-jobs")
@@ -59,40 +82,50 @@ fn main() {
         .filter(|job| job.started_at.timestamp() != 0)
         .collect();
 
-    let cold_start_times: Vec<i64> = jobs
+    let times: Vec<(i64, i64, i64)> = jobs
         .iter()
         .map(|job| {
-            let cold_start_time = job.started_at - job.created_at;
-            // not sure why the heck I need to divide by 1k, but the num_seconds
-            // is returning millis
-            cold_start_time.num_seconds() / 1000
+            let cold_time = (job.started_at - job.created_at);
+            let run_time = (job.stopped_at - job.started_at);
+            let total_time = cold_time + run_time;
+            (
+                cold_time.num_seconds() / 1000,
+                run_time.num_seconds() / 1000,
+                total_time.num_seconds() / 1000,
+            )
         })
         .collect();
 
-    let run_times: Vec<i64> = jobs
-        .iter()
-        .map(|job| {
-            let time = job.stopped_at - job.started_at;
-            // not sure why the heck I need to divide by 1k, but the num_seconds
-            // is returning millis
-            time.num_seconds() / 1000
-        })
-        .collect();
+    match (&args.all, &args.cold, &args.run, &args.total) {
+        (true, _, _, _) => {
+            println!("{0: <10} {1: <10} {2: <10}", "cold", "run", "time");
+            for time in times {
+                println!("{0: <10} {1: <10} {2: <10}", time.0, time.1, time.2);
+            }
+        }
+        (false, disp_cold, disp_run, disp_total) => {
+            for time in times {
+                let cold_str = if *disp_cold {
+                    time.0.to_string() + "s"
+                } else {
+                    "".to_string()
+                };
+                let run_str = if *disp_run {
+                    time.1.to_string() + "s"
+                } else {
+                    "".to_string()
+                };
+                let total_str = if *disp_total {
+                    time.2.to_string() + "s"
+                } else {
+                    "".to_string()
+                };
 
-    let total_time: Vec<i64> = cold_start_times
-        .iter()
-        .zip(run_times.iter())
-        .map(|t| t.0 + t.1)
-        .collect();
-
-    println!("######### COLD START SECONDS #########");
-    write_stdout(&cold_start_times);
-
-    println!("######### RUN SECONDS #########");
-    write_stdout(&run_times);
-
-    println!("######### TOTAL SECONDS #########");
-    write_stdout(&total_time);
+                let line = format!("{} {} {}", cold_str, run_str, total_str);
+                println!("{}", line.trim());
+            }
+        }
+    }
 
     //     let container_overrides = "{
 
