@@ -1,5 +1,5 @@
 use chrono::serde::{ts_seconds, ts_seconds_option};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::io;
 use std::process::Command;
@@ -59,5 +59,58 @@ fn main() {
         .filter(|job| job.started_at.timestamp() != 0)
         .collect();
 
-    write_stdout(&jobs);
+    let cold_start_times: Vec<i64> = jobs
+        .iter()
+        .map(|job| {
+            let cold_start_time = job.started_at - job.created_at;
+            // not sure why the heck I need to divide by 1k, but the num_seconds
+            // is returning millis
+            cold_start_time.num_seconds() / 1000
+        })
+        .collect();
+
+    let run_times: Vec<i64> = jobs
+        .iter()
+        .map(|job| {
+            let time = job.stopped_at - job.started_at;
+            // not sure why the heck I need to divide by 1k, but the num_seconds
+            // is returning millis
+            time.num_seconds() / 1000
+        })
+        .collect();
+
+    let total_time: Vec<i64> = cold_start_times
+        .iter()
+        .zip(run_times.iter())
+        .map(|t| t.0 + t.1)
+        .collect();
+
+    println!("######### COLD START SECONDS #########");
+    write_stdout(&cold_start_times);
+
+    println!("######### RUN SECONDS #########");
+    write_stdout(&run_times);
+
+    println!("######### TOTAL SECONDS #########");
+    write_stdout(&total_time);
+
+    //     let container_overrides = "{
+
+    // }";
+    // let submit_job_res = Command::new("aws")
+    //     .arg("batch")
+    //     .arg("submit-job")
+    //     .arg("job-name")
+    //     .arg("load-testing-cold-start")
+    //     .arg("--job-queue")
+    //     .arg("scheduler-stage")
+    //     .arg("--job-definition")
+    //     .arg("arn:aws:batch:us-east-1:663148821630:job-definition/run-scheduler-stage:7")
+    //     .arg("--timeout")
+    //     .arg("180")
+    //     .arg("--container-overrides")
+    //     .arg("")
+    //     .output()
+    //     .expect("failed to execute process")
+    //     .stdout;
 }
