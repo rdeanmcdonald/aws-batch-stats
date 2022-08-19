@@ -58,12 +58,13 @@ where
 
 fn main() {
     let args = Args::parse();
+    let stage = "stage";
 
     let aws_res = Command::new("aws")
         .arg("batch")
         .arg("list-jobs")
         .arg("--job-queue")
-        .arg("scheduler-stage")
+        .arg(format!("scheduler-{}", stage))
         .arg("--job-status")
         .arg("Succeeded")
         .arg("--output")
@@ -127,23 +128,36 @@ fn main() {
         }
     }
 
-    //     let container_overrides = "{
+    let container_overrides = r#"
+{
+    "environment": [
+        { "name": "STAGE", "value": "stage" },
+        { "name": "CORR_ID", "value": "42c6d830-1f17-11ed-8dc3-cbe6144980fb" },
+        { "name": "java_opts", "value": "" }
+    ],
+    "resourceRequirements": [
+        { "type": "MEMORY", "value": "2048" },
+        { "type": "VCPU", "value": "1" }
+    ],
+    "command": ["-J-XX:+UseContainerSupport","-J-XX:InitialRAMPercentage=80.0","-J-XX:MaxRAMPercentage=80.0","-main","io.wisesystems.engine.planning.Main","02083785-1978-454f-8b97-2ce66cb0a86d/2022/08/18/1660842028339.json","lrsStart"]
+}
+"#;
 
-    // }";
-    // let submit_job_res = Command::new("aws")
-    //     .arg("batch")
-    //     .arg("submit-job")
-    //     .arg("job-name")
-    //     .arg("load-testing-cold-start")
-    //     .arg("--job-queue")
-    //     .arg("scheduler-stage")
-    //     .arg("--job-definition")
-    //     .arg("arn:aws:batch:us-east-1:663148821630:job-definition/run-scheduler-stage:7")
-    //     .arg("--timeout")
-    //     .arg("180")
-    //     .arg("--container-overrides")
-    //     .arg("")
-    //     .output()
-    //     .expect("failed to execute process")
-    //     .stdout;
+    let submit_job_res = Command::new("aws")
+        .arg("batch")
+        .arg("submit-job")
+        .arg("--job-name")
+        .arg("load-testing-cold-start")
+        .arg("--job-queue")
+        .arg("scheduler-stage")
+        .arg("--job-definition")
+        .arg("arn:aws:batch:us-east-1:663148821630:job-definition/run-scheduler-stage:7")
+        .arg("--container-overrides")
+        .arg(container_overrides)
+        .spawn()
+        .expect("Failed to execute command")
+        .wait_with_output()
+        .expect("failed to wait on child");
+
+    // println!("{:?}", str::from_utf8(&submit_job_res).unwrap().trim());
 }
